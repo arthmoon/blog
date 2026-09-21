@@ -4,6 +4,10 @@ declare(strict_types=1);
 
 namespace App\Blog\Domain\Entity;
 
+use App\Blog\Domain\Event\PostCategoriesChanged;
+use App\Blog\Domain\Event\PostPublished;
+use App\Blog\Domain\Event\PostUnpublished;
+use App\Blog\Domain\Event\RecordsEvents;
 use App\Blog\Domain\Exception\PostWithoutCategory;
 use App\Blog\Domain\ValueObject\CategoryId;
 use App\Blog\Domain\ValueObject\ImagePath;
@@ -25,6 +29,8 @@ use App\Blog\Domain\ValueObject\ViewCount;
  */
 final class Post
 {
+    use RecordsEvents;
+
     private const int TITLE_MAX_LENGTH = 200;
 
     private const int DESCRIPTION_MAX_LENGTH = 500;
@@ -111,22 +117,41 @@ final class Post
         $this->id = $id;
     }
 
+    /**
+     * Публиковать можно только сохранённую статью.
+     *
+     * Это прямое следствие того, что идентичность выдаёт AUTO_INCREMENT:
+     * событие о публикации обязано нести идентификатор, а у черновика его
+     * ещё нет. Цена выбора целочисленного ключа вместо UUID.
+     */
     public function publish(\DateTimeImmutable $publishedAt): void
     {
+        if (null === $this->id) {
+            throw new \LogicException('Нельзя опубликовать несохранённую статью: идентификатор выдаёт база.');
+        }
+
         if (null !== $this->publishedAt) {
             throw new \LogicException('Статья уже опубликована.');
         }
 
         $this->publishedAt = $publishedAt;
+
+        $this->recordThat(new PostPublished($this->id, $this->categoryIds));
     }
 
     public function unpublish(): void
     {
+        if (null === $this->id) {
+            throw new \LogicException('Нельзя снять с публикации несохранённую статью.');
+        }
+
         if (null === $this->publishedAt) {
             throw new \LogicException('Статья не опубликована.');
         }
 
         $this->publishedAt = null;
+
+        $this->recordThat(new PostUnpublished($this->id, $this->categoryIds));
     }
 
     /**
@@ -139,11 +164,22 @@ final class Post
     }
 
     /**
+     * Событие записывается только у сохранённой статьи и только если набор
+     * действительно изменился: у черновика проекции ещё нет, а перестраивать
+     * ленты из-за перестановки тех же категорий незачем.
+     *
      * @param list<CategoryId> $categoryIds
      */
     public function changeCategories(array $categoryIds): void
     {
+        $previous = $this->categoryIds;
         $this->categoryIds = self::normalizeCategories($categoryIds);
+
+        if (null === $this->id || $this->sameCategories($previous, $this->categoryIds)) {
+            return;
+        }
+
+        $this->recordThat(new PostCategoriesChanged($this->id, $previous, $this->categoryIds));
     }
 
     /**
@@ -207,6 +243,22 @@ final class Post
     public function publishedAt(): ?\DateTimeImmutable
     {
         return $this->publishedAt;
+    }
+
+    /**
+     * @param list<CategoryId> $left
+     * @param list<CategoryId> $right
+     */
+    private function sameCategories(array $left, array $right): bool
+    {
+        $toValues = static function (array $ids): array {
+            $values = array_map(static fn (CategoryId $id): int => $id->value, $ids);
+            sort($values);
+
+            return $values;
+        };
+
+        return $toValues($left) === $toValues($right);
     }
 
     /**

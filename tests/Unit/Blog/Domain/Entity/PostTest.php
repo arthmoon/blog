@@ -82,9 +82,16 @@ final class PostTest extends TestCase
         }
     }
 
+    public function testCannotPublishUnsavedPost(): void
+    {
+        $this->expectException(\LogicException::class);
+
+        $this->draft()->publish(new \DateTimeImmutable('2026-09-01 10:00:00'));
+    }
+
     public function testPublishSetsMoment(): void
     {
-        $post = $this->draft();
+        $post = $this->persisted();
         $moment = new \DateTimeImmutable('2026-09-01 10:00:00');
 
         $post->publish($moment);
@@ -95,7 +102,7 @@ final class PostTest extends TestCase
 
     public function testFuturePublicationIsNotVisibleYet(): void
     {
-        $post = $this->draft();
+        $post = $this->persisted();
         $post->publish(new \DateTimeImmutable('2026-12-31 00:00:00'));
 
         self::assertNotNull($post->publishedAt());
@@ -107,7 +114,7 @@ final class PostTest extends TestCase
 
     public function testCannotPublishTwice(): void
     {
-        $post = $this->draft();
+        $post = $this->persisted();
         $post->publish(new \DateTimeImmutable('2026-09-01 10:00:00'));
 
         $this->expectException(\LogicException::class);
@@ -117,7 +124,7 @@ final class PostTest extends TestCase
 
     public function testUnpublishReturnsPostToDraft(): void
     {
-        $post = $this->draft();
+        $post = $this->persisted();
         $post->publish(new \DateTimeImmutable('2026-09-01 10:00:00'));
         $post->unpublish();
 
@@ -128,7 +135,7 @@ final class PostTest extends TestCase
     {
         $this->expectException(\LogicException::class);
 
-        $this->draft()->unpublish();
+        $this->persisted()->unpublish();
     }
 
     public function testChangeCategoriesKeepsInvariant(): void
@@ -179,5 +186,14 @@ final class PostTest extends TestCase
     private function draft(string $title = 'Заголовок статьи'): Post
     {
         return Post::create($title, 'Короткое описание', 'Текст статьи', [CategoryId::fromInt(1)]);
+    }
+
+    /** Черновик, которому база уже выдала идентификатор. */
+    private function persisted(): Post
+    {
+        $post = $this->draft();
+        $post->assignId(PostId::fromInt(1));
+
+        return $post;
     }
 }
