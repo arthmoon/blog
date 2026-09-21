@@ -41,9 +41,9 @@ final class SeedBlogTest extends IntegrationTestCase
 
         self::assertSame(4, $result->categories);
         self::assertSame(20, $result->posts);
-        self::assertSame(4, $this->count('categories'));
-        self::assertSame(20, $this->count('posts'));
-        self::assertGreaterThan(0, $this->count('category_latest_posts'));
+        self::assertSame(4, $this->rowCount('categories'));
+        self::assertSame(20, $this->rowCount('posts'));
+        self::assertGreaterThan(0, $this->rowCount('category_latest_posts'));
     }
 
     public function testEveryPostIsPublished(): void
@@ -106,7 +106,7 @@ final class SeedBlogTest extends IntegrationTestCase
         (new BlogPurger($this->connection))->purge();
 
         foreach (['categories', 'posts', 'post_category', 'category_latest_posts'] as $table) {
-            self::assertSame(0, $this->count($table), sprintf('Таблица %s должна быть пуста', $table));
+            self::assertSame(0, $this->rowCount($table), sprintf('Таблица %s должна быть пуста', $table));
         }
     }
 
@@ -134,7 +134,7 @@ final class SeedBlogTest extends IntegrationTestCase
         return $handler(new SeedBlog($categories, $posts, new \DateTimeImmutable('2026-09-20 12:00:00')));
     }
 
-    private function count(string $table): int
+    private function rowCount(string $table): int
     {
         return (int) $this->connection->query('SELECT COUNT(*) FROM ' . $table)->fetchColumn();
     }
