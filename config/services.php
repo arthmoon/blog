@@ -35,6 +35,7 @@ use App\Shared\Infrastructure\Template\SmartyRenderer;
 use App\Shared\Infrastructure\Template\TemplateRenderer;
 use App\Ui\Web\Controller\CategoryController;
 use App\Ui\Web\Controller\HomeController;
+use App\Ui\Web\Controller\PostController;
 use Psr\Log\LoggerInterface;
 
 /**
@@ -109,12 +110,20 @@ return static function (Container $container, string $root): void {
         $c->get(TemplateRenderer::class),
     ));
 
+    $container->set(PostController::class, static fn (Container $c): PostController => new PostController(
+        $c->get(PostQuery::class),
+        $c->get(SimilarPostsQuery::class),
+        $c->get(DeferredCommandBus::class),
+        $c->get(TemplateRenderer::class),
+    ));
+
     // Веб
     $container->set(Router::class, static function (): Router {
         $router = new Router();
 
         $router->get('/', HomeController::class);
         $router->get('/category/{slug}', CategoryController::class);
+        $router->get('/posts/{slug}', PostController::class);
 
         return $router;
     });

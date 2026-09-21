@@ -41,4 +41,13 @@ abstract class WebTestCase extends IntegrationTestCase
     {
         return $this->container->get(Kernel::class)->handle(new Request('GET', $path, $query));
     }
+
+    /**
+     * То, что происходит уже после отправки ответа. В вебе это вызывает
+     * public/index.php; в тесте — сам тест, чтобы проверить порядок.
+     */
+    protected function terminate(): void
+    {
+        $this->container->get(Kernel::class)->terminate();
+    }
 }

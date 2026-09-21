@@ -58,6 +58,26 @@ final readonly class TemplateFunctions
         return $number . ' ' . $form;
     }
 
+    /**
+     * Текст статьи, разбитый на абзацы.
+     *
+     * Разбивать в шаблоне через nl2br нельзя: модификаторы выполняются
+     * до авто-экранирования, и вставленные теги <br> были бы экранированы
+     * вместе с текстом. Отдаём массив, шаблон оборачивает каждый абзац
+     * в <p> — и каждый экранируется сам по себе.
+     *
+     * @return list<string>
+     */
+    public function paragraphs(string $text): array
+    {
+        $parts = preg_split('/\R{2,}/u', trim($text)) ?: [];
+
+        return array_values(array_filter(
+            array_map(trim(...), $parts),
+            static fn (string $paragraph): bool => '' !== $paragraph,
+        ));
+    }
+
     public function views(int $number): string
     {
         return $this->plural($number, 'просмотр', 'просмотра', 'просмотров');

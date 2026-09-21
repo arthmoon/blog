@@ -9,12 +9,12 @@ use App\Blog\Application\Port\CategoryQuery;
 use App\Blog\Application\PostSort;
 use App\Blog\Application\ReadModel\PostsPage;
 use App\Blog\Domain\ValueObject\CategoryId;
-use App\Blog\Domain\ValueObject\Slug;
 use App\Shared\Infrastructure\Http\PageNotFound;
 use App\Shared\Infrastructure\Http\Request;
 use App\Shared\Infrastructure\Http\Response;
 use App\Shared\Infrastructure\Template\TemplateRenderer;
 use App\Ui\Web\Pagination;
+use App\Ui\Web\SlugParameter;
 
 /**
  * Страница категории: описание, список статей, сортировка и пагинация.
@@ -36,7 +36,7 @@ final readonly class CategoryController
 
     public function __invoke(Request $request): Response
     {
-        $category = $this->categories->findBySlug($this->slug($request));
+        $category = $this->categories->findBySlug(SlugParameter::of($request));
 
         if (null === $category) {
             throw new PageNotFound();
@@ -61,20 +61,6 @@ final readonly class CategoryController
             'previousUrl' => $posts->hasPrevious() ? $this->url($category->slug, $sort, $page - 1) : null,
             'nextUrl' => $posts->hasNext() ? $this->url($category->slug, $sort, $page + 1) : null,
         ]));
-    }
-
-    /**
-     * Кривой слаг в адресе — это не ошибка сервера, а несуществующая
-     * страница: значение объекта проверяется в конструкторе, и отказ
-     * превращается в 404.
-     */
-    private function slug(Request $request): Slug
-    {
-        try {
-            return Slug::fromString((string) $request->attribute('slug'));
-        } catch (\InvalidArgumentException) {
-            throw new PageNotFound();
-        }
     }
 
     /**
