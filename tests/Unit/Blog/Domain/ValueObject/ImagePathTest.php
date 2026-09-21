@@ -35,6 +35,7 @@ final class ImagePathTest extends TestCase
         yield 'исполняемый файл' => ['posts/shell.php'];
         yield 'svg с возможным скриптом' => ['posts/logo.svg'];
         yield 'верхний регистр в пути' => ['Posts/Cover.jpg'];
+        yield 'длиннее колонки в базе' => [str_repeat('a', 252) . '.jpg'];
     }
 
     #[DataProvider('invalidPaths')]

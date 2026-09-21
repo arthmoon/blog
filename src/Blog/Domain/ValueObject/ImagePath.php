@@ -14,6 +14,9 @@ final readonly class ImagePath implements \Stringable
 {
     private const string PUBLIC_PREFIX = '/uploads/';
 
+    /** Столько же, сколько в колонке posts.image. */
+    private const int MAX_LENGTH = 255;
+
     private const array ALLOWED_EXTENSIONS = ['jpg', 'jpeg', 'png', 'webp'];
 
     /** Только относительный путь: без ведущего слеша, пробелов и обратных слешей. */
@@ -29,6 +32,10 @@ final readonly class ImagePath implements \Stringable
 
         if ('' === $value) {
             throw new \InvalidArgumentException('Путь к изображению не может быть пустым.');
+        }
+
+        if (mb_strlen($value) > self::MAX_LENGTH) {
+            throw new \InvalidArgumentException(sprintf('Путь к изображению длиннее %d символов.', self::MAX_LENGTH));
         }
 
         if (str_contains($value, '..')) {
