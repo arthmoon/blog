@@ -33,6 +33,8 @@ use App\Shared\Infrastructure\Http\Router;
 use App\Shared\Infrastructure\Log\FileLogger;
 use App\Shared\Infrastructure\Template\SmartyRenderer;
 use App\Shared\Infrastructure\Template\TemplateRenderer;
+use App\Ui\Web\Controller\CategoryController;
+use App\Ui\Web\Controller\HomeController;
 use Psr\Log\LoggerInterface;
 
 /**
@@ -95,9 +97,26 @@ return static function (Container $container, string $root): void {
         return $bus;
     });
 
+    // Контроллеры
+    $container->set(CategoryController::class, static fn (Container $c): CategoryController => new CategoryController(
+        $c->get(CategoryQuery::class),
+        $c->get(CategoryPostsQuery::class),
+        $c->get(TemplateRenderer::class),
+    ));
+
+    $container->set(HomeController::class, static fn (Container $c): HomeController => new HomeController(
+        $c->get(HomePageQuery::class),
+        $c->get(TemplateRenderer::class),
+    ));
+
     // Веб
     $container->set(Router::class, static function (): Router {
-        return new Router();
+        $router = new Router();
+
+        $router->get('/', HomeController::class);
+        $router->get('/category/{slug}', CategoryController::class);
+
+        return $router;
     });
 
     $container->set(ResponseSender::class, static fn (): ResponseSender => new ResponseSender());
