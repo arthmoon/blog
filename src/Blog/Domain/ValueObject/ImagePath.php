@@ -12,7 +12,8 @@ namespace App\Blog\Domain\ValueObject;
  */
 final readonly class ImagePath implements \Stringable
 {
-    private const string PUBLIC_PREFIX = '/uploads/';
+    /** Публичный, потому что тем же префиксом пользуются читающие запросы при сборке адреса. */
+    public const string PUBLIC_PREFIX = '/uploads/';
 
     /** Столько же, сколько в колонке posts.image. */
     private const int MAX_LENGTH = 255;

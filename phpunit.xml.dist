@@ -8,8 +8,12 @@
          failOnRisky="true"
          beStrictAboutOutputDuringTests="true">
     <testsuites>
-        <testsuite name="all">
-            <directory>tests</directory>
+        <testsuite name="unit">
+            <directory>tests/Architecture</directory>
+            <directory>tests/Unit</directory>
+        </testsuite>
+        <testsuite name="integration">
+            <directory>tests/Integration</directory>
         </testsuite>
     </testsuites>
 
@@ -21,5 +25,8 @@
 
     <php>
         <env name="APP_ENV" value="test"/>
+        <!-- Тесты работают только с отдельной базой: force гарантирует,
+             что переменная окружения контейнера её не перебьёт. -->
+        <env name="DB_NAME" value="blog_test" force="true"/>
     </php>
 </phpunit>
