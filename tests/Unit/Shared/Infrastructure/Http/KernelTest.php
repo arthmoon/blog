@@ -4,12 +4,14 @@ declare(strict_types=1);
 
 namespace App\Tests\Unit\Shared\Infrastructure\Http;
 
+use App\Shared\Infrastructure\Bus\DeferredCommandBus;
 use App\Shared\Infrastructure\Container\Container;
 use App\Shared\Infrastructure\Http\Kernel;
 use App\Shared\Infrastructure\Http\PageNotFound;
 use App\Shared\Infrastructure\Http\Request;
 use App\Shared\Infrastructure\Http\Response;
 use App\Shared\Infrastructure\Http\Router;
+use App\Tests\Support\ArrayTemplateRenderer;
 use App\Tests\Support\RecordingLogger;
 use PHPUnit\Framework\TestCase;
 
@@ -21,11 +23,14 @@ final class KernelTest extends TestCase
 
     private RecordingLogger $logger;
 
+    private DeferredCommandBus $deferred;
+
     protected function setUp(): void
     {
         $this->container = new Container();
         $this->router = new Router();
         $this->logger = new RecordingLogger();
+        $this->deferred = new DeferredCommandBus($this->logger);
     }
 
     public function testCallsControllerAndReturnsItsResponse(): void
@@ -119,8 +124,62 @@ final class KernelTest extends TestCase
         $this->container->set($id, static fn (): callable => $controller);
     }
 
+    public function testDeferredWorkWaitsForTerminate(): void
+    {
+        $done = [];
+        $this->deferred->register(DeferredProbe::class, static function () use (&$done): void {
+            $done[] = 'выполнено';
+        });
+
+        $this->route('/', function (): Response {
+            $this->deferred->push(new DeferredProbe());
+
+            return Response::text('страница');
+        });
+
+        $kernel = $this->kernel();
+        $response = $kernel->handle(new Request('GET', '/'));
+
+        self::assertSame('страница', $response->body);
+        self::assertSame([], $done, 'До terminate отложенная работа не должна выполняться');
+
+        $kernel->terminate();
+
+        self::assertSame(['выполнено'], $done);
+    }
+
+    public function testTerminateSwallowsFailures(): void
+    {
+        $this->deferred->register(DeferredProbe::class, static function (): never {
+            throw new \RuntimeException('счётчик не обновился');
+        });
+
+        $this->route('/', function (): Response {
+            $this->deferred->push(new DeferredProbe());
+
+            return Response::text('страница');
+        });
+
+        $kernel = $this->kernel();
+        $kernel->handle(new Request('GET', '/'));
+        $kernel->terminate();
+
+        self::assertCount(1, $this->logger->records, 'Сбой должен попасть в лог, а не наружу');
+    }
+
     private function kernel(bool $debug = false): Kernel
     {
-        return new Kernel($this->container, $this->router, $this->logger, $debug);
+        return new Kernel(
+            $this->container,
+            $this->router,
+            $this->deferred,
+            new ArrayTemplateRenderer(),
+            $this->logger,
+            $debug,
+        );
     }
+}
+
+final class DeferredProbe
+{
 }

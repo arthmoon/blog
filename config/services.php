@@ -2,6 +2,8 @@
 
 declare(strict_types=1);
 
+use App\Blog\Application\Command\RegisterPostView;
+use App\Blog\Application\Command\RegisterPostViewHandler;
 use App\Blog\Application\Port\CategoryPostsQuery;
 use App\Blog\Application\Port\CategoryQuery;
 use App\Blog\Application\Port\HomePageQuery;
@@ -21,12 +23,16 @@ use App\Blog\Infrastructure\Persistence\Mysql\PdoPostRepository;
 use App\Blog\Infrastructure\Persistence\Mysql\PdoSimilarPostsQuery;
 use App\Blog\Infrastructure\Projection\CategoryLatestPostsProjector;
 use App\Shared\Infrastructure\Config\DatabaseConfig;
+use App\Shared\Infrastructure\Bus\DeferredCommandBus;
 use App\Shared\Infrastructure\Container\Container;
 use App\Shared\Infrastructure\Database\ConnectionFactory;
 use App\Shared\Infrastructure\Database\TransactionManager;
 use App\Shared\Infrastructure\Http\Kernel;
+use App\Shared\Infrastructure\Http\ResponseSender;
 use App\Shared\Infrastructure\Http\Router;
 use App\Shared\Infrastructure\Log\FileLogger;
+use App\Shared\Infrastructure\Template\SmartyRenderer;
+use App\Shared\Infrastructure\Template\TemplateRenderer;
 use Psr\Log\LoggerInterface;
 
 /**
@@ -73,15 +79,42 @@ return static function (Container $container, string $root): void {
     $container->set(PostQuery::class, static fn (Container $c): PostQuery => new PdoPostQuery($c->get(\PDO::class)));
     $container->set(SimilarPostsQuery::class, static fn (Container $c): SimilarPostsQuery => new PdoSimilarPostsQuery($c->get(\PDO::class)));
 
+    // Отложенные операции
+    $container->set(RegisterPostViewHandler::class, static fn (Container $c): RegisterPostViewHandler => new RegisterPostViewHandler(
+        $c->get(PostRepositoryInterface::class),
+    ));
+
+    $container->set(DeferredCommandBus::class, static function (Container $c): DeferredCommandBus {
+        $bus = new DeferredCommandBus($c->get(LoggerInterface::class));
+
+        $bus->register(
+            RegisterPostView::class,
+            static fn (RegisterPostView $command) => ($c->get(RegisterPostViewHandler::class))($command),
+        );
+
+        return $bus;
+    });
+
     // Веб
     $container->set(Router::class, static function (): Router {
         return new Router();
     });
 
+    $container->set(ResponseSender::class, static fn (): ResponseSender => new ResponseSender());
+
+    $container->set(TemplateRenderer::class, static fn (Container $c): TemplateRenderer => new SmartyRenderer(
+        $root . '/templates',
+        $root . '/var/cache/smarty',
+        $c->get('debug'),
+    ));
+
     $container->set(Kernel::class, static fn (Container $c): Kernel => new Kernel(
         $c,
         $c->get(Router::class),
+        $c->get(DeferredCommandBus::class),
+        $c->get(TemplateRenderer::class),
         $c->get(LoggerInterface::class),
         $c->get('debug'),
+        (int) (getenv('DEFERRED_DEMO_SLEEP') ?: '0'),
     ));
 };
