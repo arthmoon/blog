@@ -3,33 +3,53 @@
 
 declare(strict_types=1);
 
+use App\Blog\Application\Command\SeedBlog;
+use App\Blog\Application\Command\SeedBlogHandler;
+use App\Blog\Infrastructure\Event\BlogListeners;
+use App\Blog\Infrastructure\Event\ListenerDomainEventDispatcher;
+use App\Blog\Infrastructure\Persistence\Mysql\PdoCategoryRepository;
+use App\Blog\Infrastructure\Persistence\Mysql\PdoPostRepository;
+use App\Blog\Infrastructure\Projection\CategoryLatestPostsProjector;
+use App\Blog\Infrastructure\Seeder\BlogPurger;
+use App\Blog\Infrastructure\Seeder\GdCoverImageFactory;
+use App\Blog\Infrastructure\Seeder\RussianSeedContent;
 use App\Shared\Infrastructure\Config\DatabaseConfig;
 use App\Shared\Infrastructure\Database\ConnectionFactory;
 use App\Shared\Infrastructure\Database\Migrator;
+use App\Shared\Infrastructure\Database\TransactionManager;
 
 require dirname(__DIR__) . '/vendor/autoload.php';
+
+/**
+ * Зависимости собираются руками: контейнер появится следующим шагом,
+ * и тогда этот файл станет тоньше.
+ */
 
 $root = dirname(__DIR__);
 $command = $argv[1] ?? 'help';
 
 try {
-    $status = match ($command) {
+    exit(match ($command) {
         'migrate' => migrate($root),
         'migrate:status' => migrateStatus($root),
+        'seed' => seed($root, $argv),
         default => help(),
-    };
+    });
 } catch (Throwable $e) {
     fwrite(STDERR, sprintf('%s: %s%s', $e::class, $e->getMessage(), PHP_EOL));
     exit(1);
 }
 
-exit($status);
+function connection(): PDO
+{
+    static $connection = null;
+
+    return $connection ??= (new ConnectionFactory(DatabaseConfig::fromEnvironment()))->create();
+}
 
 function migrator(string $root): Migrator
 {
-    $connection = (new ConnectionFactory(DatabaseConfig::fromEnvironment()))->create();
-
-    return new Migrator($connection, $root . '/database/migrations');
+    return new Migrator(connection(), $root . '/database/migrations');
 }
 
 function migrate(string $root): int
@@ -63,13 +83,70 @@ function migrateStatus(string $root): int
     return 0;
 }
 
+/**
+ * @param list<string> $argv
+ */
+function seed(string $root, array $argv): int
+{
+    $categories = option($argv, 'categories', 8);
+    $posts = option($argv, 'posts', 120);
+
+    $connection = connection();
+
+    $projector = new CategoryLatestPostsProjector($connection);
+    $dispatcher = new ListenerDomainEventDispatcher();
+    BlogListeners::register($dispatcher, $projector);
+
+    echo 'Очищаем прежние данные...', PHP_EOL;
+    (new BlogPurger($connection))->purge();
+
+    $handler = new SeedBlogHandler(
+        new PdoCategoryRepository($connection),
+        new PdoPostRepository($connection, new TransactionManager($connection), $dispatcher),
+        new RussianSeedContent(),
+        new GdCoverImageFactory($root . '/public/uploads'),
+    );
+
+    $started = microtime(true);
+    $result = $handler(new SeedBlog($categories, $posts, new DateTimeImmutable('now')));
+
+    printf(
+        'Создано: %d категорий, %d статей за %.1f с.%s',
+        $result->categories,
+        $result->posts,
+        microtime(true) - $started,
+        PHP_EOL,
+    );
+
+    $feed = (int) connection()->query('SELECT COUNT(*) FROM category_latest_posts')->fetchColumn();
+    printf('В проекции лент: %d записей.%s', $feed, PHP_EOL);
+
+    return 0;
+}
+
+/**
+ * @param list<string> $argv
+ */
+function option(array $argv, string $name, int $default): int
+{
+    foreach ($argv as $argument) {
+        if (str_starts_with($argument, "--{$name}=")) {
+            return (int) substr($argument, strlen($name) + 3);
+        }
+    }
+
+    return $default;
+}
+
 function help(): int
 {
     echo <<<TXT
         Использование: bin/console <команда>
 
-          migrate          применить невыполненные миграции
-          migrate:status   показать состояние миграций
+          migrate                       применить невыполненные миграции
+          migrate:status                показать состояние миграций
+          seed [--categories=8]
+               [--posts=120]            очистить блог и наполнить заново
 
         TXT;
 
