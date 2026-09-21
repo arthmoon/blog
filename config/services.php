@@ -2,12 +2,16 @@
 
 declare(strict_types=1);
 
+use App\Blog\Application\Command\CreatePostHandler;
 use App\Blog\Application\Command\RegisterPostView;
 use App\Blog\Application\Command\RegisterPostViewHandler;
+use App\Blog\Application\Command\SeedBlogHandler;
 use App\Blog\Application\Port\CategoryPostsQuery;
+use App\Blog\Application\Port\CoverImageFactory;
 use App\Blog\Application\Port\CategoryQuery;
 use App\Blog\Application\Port\HomePageQuery;
 use App\Blog\Application\Port\PostQuery;
+use App\Blog\Application\Port\SeedContent;
 use App\Blog\Application\Port\SimilarPostsQuery;
 use App\Blog\Domain\Repository\CategoryRepositoryInterface;
 use App\Blog\Domain\Repository\PostRepositoryInterface;
@@ -22,10 +26,14 @@ use App\Blog\Infrastructure\Persistence\Mysql\PdoPostQuery;
 use App\Blog\Infrastructure\Persistence\Mysql\PdoPostRepository;
 use App\Blog\Infrastructure\Persistence\Mysql\PdoSimilarPostsQuery;
 use App\Blog\Infrastructure\Projection\CategoryLatestPostsProjector;
+use App\Blog\Infrastructure\Seeder\BlogPurger;
+use App\Blog\Infrastructure\Seeder\GdCoverImageFactory;
+use App\Blog\Infrastructure\Seeder\RussianSeedContent;
 use App\Shared\Infrastructure\Config\DatabaseConfig;
 use App\Shared\Infrastructure\Bus\DeferredCommandBus;
 use App\Shared\Infrastructure\Container\Container;
 use App\Shared\Infrastructure\Database\ConnectionFactory;
+use App\Shared\Infrastructure\Database\Migrator;
 use App\Shared\Infrastructure\Database\TransactionManager;
 use App\Shared\Infrastructure\Http\Kernel;
 use App\Shared\Infrastructure\Http\ResponseSender;
@@ -73,6 +81,31 @@ return static function (Container $container, string $root): void {
         $c->get(\PDO::class),
         $c->get(TransactionManager::class),
         $c->get(DomainEventDispatcher::class),
+    ));
+
+    // Инструменты разработчика: миграции, очистка, наполнение
+    $container->set(Migrator::class, static fn (Container $c): Migrator => new Migrator(
+        $c->get(\PDO::class),
+        $root . '/database/migrations',
+    ));
+
+    $container->set(BlogPurger::class, static fn (Container $c): BlogPurger => new BlogPurger($c->get(\PDO::class)));
+
+    $container->set(SeedContent::class, static fn (): SeedContent => new RussianSeedContent());
+
+    $container->set(CoverImageFactory::class, static fn (): CoverImageFactory => new GdCoverImageFactory($root . '/public/uploads'));
+
+    $container->set(SeedBlogHandler::class, static fn (Container $c): SeedBlogHandler => new SeedBlogHandler(
+        $c->get(CategoryRepositoryInterface::class),
+        $c->get(PostRepositoryInterface::class),
+        $c->get(SeedContent::class),
+        $c->get(CoverImageFactory::class),
+    ));
+
+    $container->set(CreatePostHandler::class, static fn (Container $c): CreatePostHandler => new CreatePostHandler(
+        $c->get(CategoryQuery::class),
+        $c->get(PostRepositoryInterface::class),
+        $c->get(CoverImageFactory::class),
     ));
 
     // Чтение

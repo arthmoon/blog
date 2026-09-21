@@ -3,58 +3,42 @@
 
 declare(strict_types=1);
 
+use App\Blog\Application\Command\CreatePost;
+use App\Blog\Application\Command\CreatePostHandler;
 use App\Blog\Application\Command\SeedBlog;
 use App\Blog\Application\Command\SeedBlogHandler;
-use App\Blog\Infrastructure\Event\BlogListeners;
-use App\Blog\Infrastructure\Event\ListenerDomainEventDispatcher;
-use App\Blog\Infrastructure\Persistence\Mysql\PdoCategoryRepository;
-use App\Blog\Infrastructure\Persistence\Mysql\PdoPostRepository;
-use App\Blog\Infrastructure\Projection\CategoryLatestPostsProjector;
 use App\Blog\Infrastructure\Seeder\BlogPurger;
-use App\Blog\Infrastructure\Seeder\GdCoverImageFactory;
-use App\Blog\Infrastructure\Seeder\RussianSeedContent;
-use App\Shared\Infrastructure\Config\DatabaseConfig;
-use App\Shared\Infrastructure\Database\ConnectionFactory;
+use App\Shared\Infrastructure\Container\Container;
 use App\Shared\Infrastructure\Database\Migrator;
-use App\Shared\Infrastructure\Database\TransactionManager;
 
 require dirname(__DIR__) . '/vendor/autoload.php';
 
-/**
- * Зависимости собираются руками: контейнер появится следующим шагом,
- * и тогда этот файл станет тоньше.
- */
-
 $root = dirname(__DIR__);
+
+// Тот же контейнер, что и у веба: собирать зависимости руками во второй раз
+// значит однажды собрать их иначе.
+$container = new Container();
+(require $root . '/config/services.php')($container, $root);
+
 $command = $argv[1] ?? 'help';
 
 try {
     exit(match ($command) {
-        'migrate' => migrate($root),
-        'migrate:status' => migrateStatus($root),
-        'seed' => seed($root, $argv),
+        'migrate' => migrate($container),
+        'migrate:status' => migrateStatus($container),
+        'seed' => seed($container, $argv),
+        'post:create' => createPost($container, $argv),
         default => help(),
     });
 } catch (Throwable $e) {
     fwrite(STDERR, sprintf('%s: %s%s', $e::class, $e->getMessage(), PHP_EOL));
+
     exit(1);
 }
 
-function connection(): PDO
+function migrate(Container $container): int
 {
-    static $connection = null;
-
-    return $connection ??= (new ConnectionFactory(DatabaseConfig::fromEnvironment()))->create();
-}
-
-function migrator(string $root): Migrator
-{
-    return new Migrator(connection(), $root . '/database/migrations');
-}
-
-function migrate(string $root): int
-{
-    $executed = migrator($root)->migrate();
+    $executed = $container->get(Migrator::class)->migrate();
 
     if ([] === $executed) {
         echo 'Новых миграций нет.', PHP_EOL;
@@ -71,9 +55,9 @@ function migrate(string $root): int
     return 0;
 }
 
-function migrateStatus(string $root): int
+function migrateStatus(Container $container): int
 {
-    $migrator = migrator($root);
+    $migrator = $container->get(Migrator::class);
     $applied = $migrator->appliedVersions();
 
     foreach ($migrator->availableVersions() as $version) {
@@ -86,29 +70,18 @@ function migrateStatus(string $root): int
 /**
  * @param list<string> $argv
  */
-function seed(string $root, array $argv): int
+function seed(Container $container, array $argv): int
 {
-    $categories = option($argv, 'categories', 8);
-    $posts = option($argv, 'posts', 120);
-
-    $connection = connection();
-
-    $projector = new CategoryLatestPostsProjector($connection);
-    $dispatcher = new ListenerDomainEventDispatcher();
-    BlogListeners::register($dispatcher, $projector);
-
     echo 'Очищаем прежние данные...', PHP_EOL;
-    (new BlogPurger($connection))->purge();
-
-    $handler = new SeedBlogHandler(
-        new PdoCategoryRepository($connection),
-        new PdoPostRepository($connection, new TransactionManager($connection), $dispatcher),
-        new RussianSeedContent(),
-        new GdCoverImageFactory($root . '/public/uploads'),
-    );
+    $container->get(BlogPurger::class)->purge();
 
     $started = microtime(true);
-    $result = $handler(new SeedBlog($categories, $posts, new DateTimeImmutable('now')));
+
+    $result = ($container->get(SeedBlogHandler::class))(new SeedBlog(
+        intOption($argv, 'categories', 8),
+        intOption($argv, 'posts', 120),
+        new DateTimeImmutable('now'),
+    ));
 
     printf(
         'Создано: %d категорий, %d статей за %.1f с.%s',
@@ -118,24 +91,175 @@ function seed(string $root, array $argv): int
         PHP_EOL,
     );
 
-    $feed = (int) connection()->query('SELECT COUNT(*) FROM category_latest_posts')->fetchColumn();
-    printf('В проекции лент: %d записей.%s', $feed, PHP_EOL);
+    printf('В проекции лент: %d записей.%s', feedSize($container), PHP_EOL);
 
     return 0;
 }
 
 /**
+ * Создание статьи из консоли.
+ *
+ * Нужна не только для удобства: без неё доменные события порождал бы
+ * только сидер, и механизм выглядел бы декоративным. Здесь видно, как
+ * публикация статьи перестраивает ленты категорий на живой базе.
+ *
  * @param list<string> $argv
  */
-function option(array $argv, string $name, int $default): int
+function createPost(Container $container, array $argv): int
 {
-    foreach ($argv as $argument) {
-        if (str_starts_with($argument, "--{$name}=")) {
-            return (int) substr($argument, strlen($name) + 3);
+    $title = stringOption($argv, 'title');
+    $categories = stringOption($argv, 'categories');
+
+    if (null === $title || null === $categories) {
+        fwrite(STDERR, 'Нужны --title и --categories. Подробности: bin/console help' . PHP_EOL);
+
+        return 1;
+    }
+
+    $slugs = array_values(array_filter(array_map(trim(...), explode(',', $categories))));
+    $body = postBody($argv);
+
+    $before = feedOf($container, $slugs);
+
+    $result = ($container->get(CreatePostHandler::class))(new CreatePost(
+        $title,
+        stringOption($argv, 'description') ?? excerpt($body),
+        $body,
+        $slugs,
+        hasFlag($argv, 'draft') ? null : new DateTimeImmutable(stringOption($argv, 'at') ?? 'now'),
+    ));
+
+    printf('Статья #%d создана: %s%s', $result->postId, $result->slug, PHP_EOL);
+
+    if (!$result->published) {
+        echo 'Сохранена черновиком — на сайте не появится и ленты не тронет.', PHP_EOL;
+
+        return 0;
+    }
+
+    printf('Опубликована: http://localhost:8080/posts/%s%s', $result->slug, PHP_EOL);
+
+    echo PHP_EOL, 'Ленты категорий до и после публикации:', PHP_EOL;
+
+    foreach (feedOf($container, $slugs) as $slug => $after) {
+        printf('  %s%s', $slug, PHP_EOL);
+        printf('    было:  %s%s', implode(', ', $before[$slug]) ?: '(пусто)', PHP_EOL);
+        printf('    стало: %s%s', implode(', ', $after) ?: '(пусто)', PHP_EOL);
+    }
+
+    return 0;
+}
+
+/**
+ * Текст статьи: из файла, из стандартного ввода или заглушка.
+ *
+ * @param list<string> $argv
+ */
+function postBody(array $argv): string
+{
+    $file = stringOption($argv, 'body-file');
+
+    if (null !== $file) {
+        $contents = @file_get_contents($file);
+
+        if (false === $contents) {
+            throw new RuntimeException(sprintf('Не удалось прочитать %s.', $file));
+        }
+
+        return trim($contents);
+    }
+
+    $inline = stringOption($argv, 'body');
+
+    if (null !== $inline) {
+        return $inline;
+    }
+
+    // Текст, переданный конвейером: bin/console post:create ... < article.txt
+    if (!stream_isatty(STDIN)) {
+        $piped = trim((string) stream_get_contents(STDIN));
+
+        if ('' !== $piped) {
+            return $piped;
         }
     }
 
-    return $default;
+    return 'Текст статьи пока не написан.';
+}
+
+function excerpt(string $body): string
+{
+    $firstParagraph = trim((string) preg_split('/\R{2,}/u', trim($body))[0]);
+
+    return mb_strimwidth($firstParagraph, 0, 500, '…');
+}
+
+/**
+ * Текущее содержимое лент для указанных категорий.
+ *
+ * @param list<string> $slugs
+ *
+ * @return array<string, list<string>>
+ */
+function feedOf(Container $container, array $slugs): array
+{
+    $sql = <<<'SQL'
+        SELECT p.slug
+          FROM category_latest_posts f
+          JOIN categories c ON c.id = f.category_id
+          JOIN posts p      ON p.id = f.post_id
+         WHERE c.slug = :slug
+         ORDER BY f.position
+        SQL;
+
+    $statement = $container->get(PDO::class)->prepare($sql);
+    $feeds = [];
+
+    foreach ($slugs as $slug) {
+        $statement->execute(['slug' => $slug]);
+        /** @var list<string> $rows */
+        $rows = $statement->fetchAll(PDO::FETCH_COLUMN);
+        $feeds[$slug] = $rows;
+    }
+
+    return $feeds;
+}
+
+function feedSize(Container $container): int
+{
+    return (int) $container->get(PDO::class)->query('SELECT COUNT(*) FROM category_latest_posts')->fetchColumn();
+}
+
+/**
+ * @param list<string> $argv
+ */
+function stringOption(array $argv, string $name): ?string
+{
+    foreach ($argv as $argument) {
+        if (str_starts_with($argument, "--{$name}=")) {
+            return substr($argument, strlen($name) + 3);
+        }
+    }
+
+    return null;
+}
+
+/**
+ * @param list<string> $argv
+ */
+function intOption(array $argv, string $name, int $default): int
+{
+    $value = stringOption($argv, $name);
+
+    return null === $value ? $default : (int) $value;
+}
+
+/**
+ * @param list<string> $argv
+ */
+function hasFlag(array $argv, string $name): bool
+{
+    return in_array("--{$name}", $argv, true);
 }
 
 function help(): int
@@ -145,8 +269,21 @@ function help(): int
 
           migrate                       применить невыполненные миграции
           migrate:status                показать состояние миграций
+
           seed [--categories=8]
                [--posts=120]            очистить блог и наполнить заново
+
+          post:create                   создать статью
+            --title="Заголовок"         обязательно
+            --categories=slug1,slug2    обязательно, слаги через запятую
+            --description="Анонс"       по умолчанию — начало текста
+            --body="Текст"              текст статьи
+            --body-file=path            прочитать текст из файла
+            --draft                     сохранить черновиком, не публикуя
+            --at="2026-09-21 10:00"     момент публикации, по умолчанию сейчас
+
+        Текст можно передать и конвейером:
+          bin/console post:create --title=… --categories=… < article.txt
 
         TXT;
 
