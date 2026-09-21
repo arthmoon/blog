@@ -2,28 +2,22 @@
 
 declare(strict_types=1);
 
-header('Content-Type: text/plain; charset=utf-8');
+use App\Shared\Infrastructure\Container\Container;
+use App\Shared\Infrastructure\Error\FatalErrorHandler;
+use App\Shared\Infrastructure\Http\Kernel;
+use App\Shared\Infrastructure\Http\Request;
+use Psr\Log\LoggerInterface;
 
-echo 'PHP ', PHP_VERSION, PHP_EOL;
+require dirname(__DIR__) . '/vendor/autoload.php';
 
-try {
-    $pdo = new PDO(
-        sprintf(
-            'mysql:host=%s;port=%s;dbname=%s;charset=utf8mb4',
-            getenv('DB_HOST'),
-            getenv('DB_PORT'),
-            getenv('DB_NAME'),
-        ),
-        (string) getenv('DB_USER'),
-        (string) getenv('DB_PASSWORD'),
-        [
-            PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
-            PDO::ATTR_EMULATE_PREPARES => false,
-        ],
-    );
+$root = dirname(__DIR__);
 
-    echo 'MySQL ', $pdo->query('SELECT VERSION()')->fetchColumn(), PHP_EOL;
-} catch (Throwable $e) {
-    http_response_code(500);
-    echo 'MySQL: ', $e->getMessage(), PHP_EOL;
-}
+$container = new Container();
+(require $root . '/config/services.php')($container, $root);
+
+// Регистрируется до всего остального: ошибка при сборке контейнера
+// тоже должна попасть в лог.
+(new FatalErrorHandler($container->get(LoggerInterface::class), $container->get('debug')))->register();
+
+$response = $container->get(Kernel::class)->handle(Request::fromGlobals());
+$response->send();
