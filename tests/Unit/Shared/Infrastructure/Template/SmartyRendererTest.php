@@ -56,9 +56,14 @@ final class SmartyRendererTest extends TestCase
         self::assertStringContainsString('&lt;script&gt;', $output);
     }
 
+    /**
+     * Единственный способ отдать готовый HTML при включённом escape_html —
+     * флаг nofilter у самого вывода. Модификатор escape тут не поможет:
+     * авто-экранирование применяется уже после модификаторов.
+     */
     public function testEscapingCanBeTurnedOffExplicitly(): void
     {
-        $this->template('raw.tpl', "{\$value|escape:'off'}");
+        $this->template('raw.tpl', '{$value nofilter}');
 
         self::assertSame('<b>жирный</b>', $this->renderer()->render('raw.tpl', ['value' => '<b>жирный</b>']));
     }
