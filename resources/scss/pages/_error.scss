@@ -1,0 +1,21 @@
+.page-error {
+    max-width: 34rem;
+    margin-inline: auto;
+    padding-block: var(--space-12);
+    text-align: center;
+
+    p {
+        margin-top: var(--space-4);
+        color: var(--color-muted);
+    }
+
+    pre {
+        margin-top: var(--space-6);
+        padding: var(--space-4);
+        overflow-x: auto;
+        border-radius: var(--radius);
+        background: var(--color-surface);
+        text-align: left;
+        font-size: 0.8125rem;
+    }
+}

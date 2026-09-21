@@ -1,0 +1,21 @@
+// Точка входа. Порядок важен: сначала токены и сброс, затем макет,
+// затем компоненты, затем частности страниц.
+@use 'base/tokens';
+@use 'base/reset';
+@use 'base/typography';
+
+@use 'layout/container';
+@use 'layout/header';
+@use 'layout/footer';
+
+@use 'components/button';
+@use 'components/post-card';
+@use 'components/post-grid';
+@use 'components/sort';
+@use 'components/pagination';
+@use 'components/tag';
+
+@use 'pages/home';
+@use 'pages/category';
+@use 'pages/post';
+@use 'pages/error';

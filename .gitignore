@@ -1,8 +1,10 @@
 /vendor/
+# Собранные стили лежат в репозитории намеренно: так проект открывается
+# сразу после docker compose up, без установки node. В настоящем проекте
+# это делал бы CI, и каталог был бы в игноре.
 /node_modules/
 /var/*
 !/var/.gitkeep
-/public/assets/
 /public/uploads/*
 !/public/uploads/.gitkeep
 .env

@@ -1,0 +1,13 @@
+@use '../abstracts/media';
+
+.post-grid {
+    display: grid;
+    gap: var(--space-6);
+    grid-template-columns: 1fr;
+
+    @include media.from('sm') {
+        // auto-fill вместо фиксированного числа колонок: сетка сама
+        // подстраивается и не оставляет одинокую карточку в ряду.
+        grid-template-columns: repeat(auto-fill, minmax(17rem, 1fr));
+    }
+}

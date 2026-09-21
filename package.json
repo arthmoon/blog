@@ -1,0 +1,12 @@
+{
+    "name": "blog-assets",
+    "private": true,
+    "description": "Сборка стилей блога",
+    "devDependencies": {
+        "sass": "^1.80.0"
+    },
+    "scripts": {
+        "build": "sass --no-source-map --style=compressed --load-path=resources/scss resources/scss/app.scss public/assets/css/app.css",
+        "watch": "sass --watch --load-path=resources/scss resources/scss/app.scss:public/assets/css/app.css"
+    }
+}

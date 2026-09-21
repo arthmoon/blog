@@ -1,0 +1,52 @@
+.post-card {
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius);
+    background: var(--color-bg);
+    transition: border-color 0.15s;
+
+    &:hover {
+        border-color: var(--color-accent);
+    }
+
+    &__image img {
+        width: 100%;
+        // Соотношение задано явно: место под картинку занято до её
+        // загрузки, и список не дёргается.
+        aspect-ratio: 16 / 9;
+        object-fit: cover;
+    }
+
+    &__body {
+        display: flex;
+        flex-direction: column;
+        gap: var(--space-2);
+        padding: var(--space-4);
+    }
+
+    &__title {
+        font-size: 1.0625rem;
+        font-weight: 600;
+    }
+
+    &__description {
+        color: var(--color-muted);
+        font-size: 0.9375rem;
+        // Три строки максимум: иначе карточки в ряду разной высоты.
+        display: -webkit-box;
+        -webkit-line-clamp: 3;
+        -webkit-box-orient: vertical;
+        overflow: hidden;
+    }
+
+    &__meta {
+        display: flex;
+        gap: var(--space-3);
+        margin-top: auto;
+        padding-top: var(--space-2);
+        color: var(--color-muted);
+        font-size: 0.8125rem;
+    }
+}

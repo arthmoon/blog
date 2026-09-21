@@ -1,0 +1,11 @@
+.container {
+    width: 100%;
+    max-width: var(--container);
+    margin-inline: auto;
+    padding-inline: var(--space-4);
+}
+
+main.container {
+    flex: 1;
+    padding-block: var(--space-8) var(--space-12);
+}

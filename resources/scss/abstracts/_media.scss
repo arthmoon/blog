@@ -1,0 +1,21 @@
+@use 'sass:map';
+
+// Брейкпоинты в одном месте: в компонентах пишем @include media.from('md'),
+// а не магические числа по всему проекту.
+$breakpoints: (
+    'sm': 30rem,
+    'md': 48rem,
+    'lg': 64rem,
+);
+
+@mixin from($name) {
+    $width: map.get($breakpoints, $name);
+
+    @if $width == null {
+        @error 'Неизвестный брейкпоинт: #{$name}';
+    }
+
+    @media (min-width: $width) {
+        @content;
+    }
+}

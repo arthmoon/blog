@@ -38,5 +38,15 @@ services:
       timeout: 5s
       retries: 20
 
+  # Одноразовый контейнер для сборки стилей: в php-образе node не нужен.
+  # Профиль tools не даёт ему стартовать вместе с docker compose up.
+  node:
+    image: node:22-alpine
+    working_dir: /app
+    volumes:
+      - ./:/app
+    profiles:
+      - tools
+
 volumes:
   mysql-data:
