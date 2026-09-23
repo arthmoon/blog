@@ -50,6 +50,24 @@ docker compose exec php php bin/console post:create \
 | `make cs` / `make fix` | проверить и починить стиль кода |
 | `make sh` | зайти в контейнер php |
 | `make assets-install` / `make assets` | установить node-зависимости и собрать стили |
+| `make assets-watch` | пересобирать стили при изменении |
+
+`make migrate` и `make seed` — обёртки над консолью. Полный список её
+команд:
+
+| Команда | Что делает |
+| --- | --- |
+| `bin/console migrate` | применить невыполненные миграции |
+| `bin/console migrate:status` | показать, какие миграции применены, а какие ждут |
+| `bin/console seed [--categories=8] [--posts=120]` | очистить блог и наполнить заново |
+| `bin/console post:create --title=… --categories=…` | создать статью (см. ниже) |
+| `bin/console help` | справка с полным списком параметров |
+
+Запускать внутри контейнера:
+
+```bash
+docker compose exec php php bin/console migrate:status
+```
 
 ## Структура
 
@@ -83,8 +101,7 @@ flowchart LR
 
 ### 1. Оконная функция вместо N+1 на главной
 
-Наивное решение — выбрать категории, а потом в цикле запросить статьи для
-каждой. Правильное — один запрос с `ROW_NUMBER() OVER (PARTITION BY ...)`.
+Правильное решение — один запрос с `ROW_NUMBER() OVER (PARTITION BY ...)`.
 `INNER JOIN` заодно отсекает категории без статей, чего требует задание.
 
 На MySQL 5.7 оконных функций нет, там понадобился бы коррелированный
